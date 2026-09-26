@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches: [master]
+    paths:
+      - 'config-mikuri'
+      - 'config-fragment-mikuri'
+      - 'prune_families.py'
+      - 'patches/**'
 
 concurrency:
   group: mikuri-build
@@ -90,7 +95,8 @@ jobs:
           install -m 0644 .config "stage/boot/config-${KREL}"
           tar -C stage --numeric-owner --owner=0 --group=0 \
             -czf "../mikuri-kernel-${KREL}.tar.gz" boot usr
-          sha256sum "../mikuri-kernel-${KREL}.tar.gz" | tee "../mikuri-kernel-${KREL}.tar.gz.sha256"
+          ( cd .. && sha256sum "mikuri-kernel-${KREL}.tar.gz" \
+            | tee "mikuri-kernel-${KREL}.tar.gz.sha256" )
           ls -lh ../mikuri-kernel-*
 
       - name: Create GitHub release
