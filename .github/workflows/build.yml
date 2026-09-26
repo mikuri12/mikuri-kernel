@@ -1,0 +1,113 @@
+name: Build mikuri-kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+concurrency:
+  group: mikuri-build
+  cancel-in-progress: true
+
+env:
+  CACHY_TARBALL: "https://github.com/CachyOS/linux/releases/download/cachyos-7.1.5-1/cachyos-7.1.5-1.tar.gz"
+  CACHY_SHA256: "8f9a217d724a0bfe38239ef7b9fbcd602a8fae1794501d4acb0e698d348713b9"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /usr/local/lib/node_modules /opt/hostedtoolcache 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q bc bison cpio flex libelf-dev libssl-dev zstd kmod
+
+      - name: Download CachyOS 7.1.5 source
+        run: |
+          curl -sSfL -o cachyos.tar.gz "$CACHY_TARBALL"
+          echo "$CACHY_SHA256  cachyos.tar.gz" | sha256sum -c -
+          tar xzf cachyos.tar.gz
+          mv cachyos-7.1.5-1 linux
+
+      - name: Apply BORE scheduler + CachyOS merge
+        working-directory: linux
+        run: |
+          # 0001 aplica con UN rechazo conocido (colision con bloque CONFIG_CACHY);
+          # 0002 lo resuelve y añade el fix de coexistencia con sched_ext.
+          patch -p1 -i ../patches/0001-bore-scheduler.patch || true
+          test -f kernel/sched/fair.c.rej
+          patch -p1 -i ../patches/0002-bore-cachy-merge.patch
+          rm -f kernel/sched/fair.c.rej
+          grep -q 'config SCHED_BORE' init/Kconfig
+          grep -q 'SCHED_TUNABLESCALING_NONE' kernel/sched/fair.c
+          echo "BORE integrado correctamente"
+
+      - name: Configure kernel
+        working-directory: linux
+        run: |
+          cp ../config-mikuri .config
+          make olddefconfig
+          # sanity: criticos para arrancar en el hardware objetivo
+          grep -q '^CONFIG_SCHED_BORE=y' .config
+          grep -q '^CONFIG_LOCALVERSION="-mikuri"' .config
+          grep -q '^CONFIG_EXT4_FS=y' .config
+          grep -q '^CONFIG_SATA_AHCI=y' .config
+          grep -q '^CONFIG_BLK_DEV_SD=y' .config
+          grep -q '^CONFIG_DRM_I915=m' .config
+          grep -q '^CONFIG_SND_HDA_INTEL=m' .config
+          grep -q '^CONFIG_E1000E=m' .config
+          grep -q '^CONFIG_MODULE_COMPRESS_ZSTD=y' .config
+          grep -q '^CONFIG_MICROCODE=y' .config
+          echo "KERNELRELEASE=$(make kernelrelease)" >> "$GITHUB_ENV"
+          echo "kernelrelease: $(make kernelrelease)"
+
+      - name: Build
+        working-directory: linux
+        run: make -j"$(nproc)"
+
+      - name: Package
+        working-directory: linux
+        run: |
+          KREL="${KERNELRELEASE}"
+          install -d stage/boot stage/usr
+          make INSTALL_MOD_PATH="$PWD/stage/usr" modules_install
+          rm -f "stage/usr/lib/modules/${KREL}/build" "stage/usr/lib/modules/${KREL}/source"
+          test -s "stage/usr/lib/modules/${KREL}/modules.dep"
+          install -m 0644 arch/x86/boot/bzImage "stage/boot/vmlinuz-${KREL}"
+          install -m 0644 System.map "stage/boot/System.map-${KREL}"
+          install -m 0644 .config "stage/boot/config-${KREL}"
+          tar -C stage --numeric-owner --owner=0 --group=0 \
+            -czf "../mikuri-kernel-${KREL}.tar.gz" boot usr
+          sha256sum "../mikuri-kernel-${KREL}.tar.gz" | tee "../mikuri-kernel-${KREL}.tar.gz.sha256"
+          ls -lh ../mikuri-kernel-*
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${KERNELRELEASE}"
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "mikuri-kernel-${KERNELRELEASE}.tar.gz" \
+              "mikuri-kernel-${KERNELRELEASE}.tar.gz.sha256" \
+              --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              "mikuri-kernel-${KERNELRELEASE}.tar.gz" \
+              "mikuri-kernel-${KERNELRELEASE}.tar.gz.sha256" \
+              --title "mikuri-kernel ${KERNELRELEASE}" \
+              --notes "CachyOS 7.1.5 + BORE 6.8.0 + fusión BORE/CACHY. Config podada para i3-6100 (Skylake) / OptiPlex Q270 / Void Linux. Instalación: ver README." \
+              --target "$GITHUB_SHA" -R "$GITHUB_REPOSITORY"
+          fi
