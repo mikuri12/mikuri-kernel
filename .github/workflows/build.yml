@@ -75,6 +75,9 @@ jobs:
           grep -q '^CONFIG_E1000E=m' .config
           grep -q '^CONFIG_MODULE_COMPRESS_ZSTD=y' .config
           grep -q '^CONFIG_MICROCODE=y' .config
+          grep -q '^CONFIG_NLS_ASCII=y' .config
+          grep -q '^CONFIG_NLS_CODEPAGE_437=y' .config
+          grep -q '^CONFIG_NLS_UTF8=y' .config
           echo "KERNELRELEASE=$(make kernelrelease)" >> "$GITHUB_ENV"
           echo "kernelrelease: $(make kernelrelease)"
 

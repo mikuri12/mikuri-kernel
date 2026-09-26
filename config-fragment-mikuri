@@ -251,6 +251,8 @@ CONFIG_VT_CONSOLE=y
 CONFIG_EXT4_FS=y
 CONFIG_EXT4_FS_POSIX_ACL=y
 CONFIG_EXT4_FS_SECURITY=y
+# NLS: charset por defecto de FAT es "ascii" -> nls_ascii DEBE existir (bugfix r1)
+CONFIG_NLS_ASCII=y
 # CONFIG_JFS_FS is not set
 # CONFIG_MINIX_FS is not set
 # CONFIG_QNX6FS_FS is not set
