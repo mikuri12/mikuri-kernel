@@ -78,6 +78,23 @@ jobs:
           grep -q '^CONFIG_NLS_ASCII=y' .config
           grep -q '^CONFIG_NLS_CODEPAGE_437=y' .config
           grep -q '^CONFIG_NLS_UTF8=y' .config
+          # escáner de cadenas: si un hijo critico esta on y su padre off -> build falla
+          python3 - <<'PYEOF'
+          import re, sys
+          val = {m.group(1): m.group(2) for m in re.finditer(r'^CONFIG_([A-Z0-9_]+)=(y|m)', open('.config').read(), re.M)}
+          need = [
+            ('HID_SUPPORT','HID'), ('HID','USB_HID'), ('HID','HID_GENERIC'), ('HID','HIDRAW'),
+            ('INPUT','INPUT_KEYBOARD'), ('INPUT','INPUT_MOUSE'), ('INPUT','INPUT_EVDEV'), ('INPUT','INPUT_JOYDEV'),
+            ('USB','USB_XHCI_HCD'), ('USB','USB_STORAGE'), ('USB','USB_UAS'), ('USB','USB_PRINTER'), ('USB','USB_HID'),
+            ('NLS','NLS_ASCII'), ('NLS','NLS_CODEPAGE_437'), ('NLS','NLS_UTF8'), ('FAT_FS','VFAT_FS'),
+            ('DRM','DRM_I915'), ('SND','SND_HDA'), ('SND_HDA','SND_HDA_INTEL'), ('SCSI','BLK_DEV_SD'),
+            ('KVM','KVM_INTEL'), ('SERIO','SERIO_I8042'), ('SERIO','SERIO_LIBPS2'),
+          ]
+          broken = [f'{c}={val[c]} pero {p} off' for p, c in need if val.get(c) and not val.get(p)]
+          if broken:
+              print('\n'.join(broken)); sys.exit(1)
+          print('chain-scan: OK')
+          PYEOF
           echo "KERNELRELEASE=$(make kernelrelease)" >> "$GITHUB_ENV"
           echo "kernelrelease: $(make kernelrelease)"
 
