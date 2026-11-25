@@ -2,6 +2,14 @@ name: Build mikuri-kernel
 
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: Kernel hardware target
+        type: choice
+        options:
+          - hardware
+          - qemu
+        default: hardware
   push:
     branches: [master]
     paths:
@@ -11,10 +19,11 @@ on:
       - 'patches/**'
 
 concurrency:
-  group: mikuri-build
+  group: mikuri-build-${{ inputs.variant || 'hardware' }}
   cancel-in-progress: true
 
 env:
+  KERNEL_VARIANT: ${{ inputs.variant || 'hardware' }}
   CACHY_TARBALL: "https://github.com/CachyOS/linux/releases/download/cachyos-7.1.5-1/cachyos-7.1.5-1.tar.gz"
   CACHY_SHA256: "8f9a217d724a0bfe38239ef7b9fbcd602a8fae1794501d4acb0e698d348713b9"
 
@@ -63,10 +72,21 @@ jobs:
         working-directory: linux
         run: |
           cp ../config-mikuri .config
+          if [ "$KERNEL_VARIANT" = qemu ]; then
+            scripts/config --set-str LOCALVERSION '-mikuri-qemu' \
+              --module DRM_VIRTIO_GPU --module DRM_BOCHS \
+              --enable DRM_FBDEV_EMULATION --enable FRAMEBUFFER_CONSOLE
+          fi
           make olddefconfig
           # sanity: criticos para arrancar en el hardware objetivo
           grep -q '^CONFIG_SCHED_BORE=y' .config
-          grep -q '^CONFIG_LOCALVERSION="-mikuri"' .config
+          if [ "$KERNEL_VARIANT" = qemu ]; then
+            grep -q '^CONFIG_LOCALVERSION="-mikuri-qemu"' .config
+            grep -q '^CONFIG_DRM_VIRTIO_GPU=m' .config
+            grep -q '^CONFIG_DRM_BOCHS=m' .config
+          else
+            grep -q '^CONFIG_LOCALVERSION="-mikuri"' .config
+          fi
           grep -q '^CONFIG_EXT4_FS=y' .config
           grep -q '^CONFIG_SATA_AHCI=y' .config
           grep -q '^CONFIG_BLK_DEV_SD=y' .config
@@ -134,6 +154,6 @@ jobs:
               "mikuri-kernel-${KERNELRELEASE}.tar.gz" \
               "mikuri-kernel-${KERNELRELEASE}.tar.gz.sha256" \
               --title "mikuri-kernel ${KERNELRELEASE}" \
-              --notes "CachyOS 7.1.5 + BORE 6.8.0 + fusión BORE/CACHY. Config podada para i3-6100 (Skylake) / OptiPlex Q270 / Void Linux. Instalación: ver README." \
+              --notes "CachyOS 7.1.5 + BORE 6.8.0 + fusión BORE/CACHY. Variante ${KERNEL_VARIANT}; la variante qemu incluye virtio-gpu y Bochs KMS para pruebas gráficas. Instalación: ver README." \
               --target "$GITHUB_SHA" -R "$GITHUB_REPOSITORY"
           fi

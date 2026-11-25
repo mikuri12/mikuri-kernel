@@ -46,6 +46,19 @@ El kernel anterior queda intacto como fallback en GRUB. No desinstales `linux-ca
 2. Push a `master` — el workflow compila y publica un release nuevo
 3. También se puede disparar a mano: Actions → Build mikuri-kernel → Run workflow
 
+### Variante para pruebas gráficas en QEMU
+
+El workflow permite elegir `variant=qemu`. Esta variante conserva i915 y los
+drivers del hardware, y añade virtio-gpu y Bochs KMS. Se publica como
+`v7.1.5-mikuri-qemu`, con su propio directorio de módulos y checksum.
+
+```sh
+gh workflow run build.yml --repo mikuri12/mikuri-kernel --ref master --field variant=qemu
+```
+
+El sistema invitado también necesita un renderer Mesa compatible con la GPU
+virtual; mylfs proporciona `kms_swrast`/softpipe para las pruebas sin aceleración 3D.
+
 ## Notas
 
 - Sin paquete de headers: no hay módulos DKMS en el sistema (GPU Intel, sin NVIDIA/ZFS). Si algún día hacen falta, el workflow habría que extenderlo.
